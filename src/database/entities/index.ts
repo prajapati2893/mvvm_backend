@@ -1,0 +1,9 @@
+export { AdditionDetail } from './addition-detail.entity';
+export { Address } from './address.entity';
+export { Class } from './class.entity';
+export { PersonRelationship } from './person-relationship.entity';
+export { Person } from './person.entity';
+export { Section } from './section.entity';
+export { Student } from './student.entity';
+export { Subject } from './subject.entity';
+export { Teacher } from './teacher.entity';
