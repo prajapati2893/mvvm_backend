@@ -1,3 +1,4 @@
+import type { ClassCode } from 'src/modules/classes/types';
 import {
   Column,
   Entity,
@@ -13,13 +14,16 @@ import { Teacher } from './teacher.entity';
 
 @Entity()
 export class Class {
-  @PrimaryGeneratedColumn()
+  @PrimaryGeneratedColumn({ primaryKeyConstraintName: 'pk_class' })
   id: number;
 
-  @Column()
-  name: string;
+  @Column({ unique: true })
+  code: ClassCode;
 
-  @OneToMany(() => Section, (section) => section.class)
+  @Column()
+  displayName: string;
+
+  @OneToMany(() => Section, (section) => section.class, { cascade: true })
   sections: Section[];
 
   @ManyToOne(() => Teacher)

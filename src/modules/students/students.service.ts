@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnprocessableEntityException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
   MaritalStatus,
@@ -14,7 +14,9 @@ import {
   Section,
   Student,
 } from 'src/database/entities';
-import { Repository } from 'typeorm';
+import { DataSource, QueryRunner, Repository } from 'typeorm';
+import { CreateParentDto } from './dtos/create-parent.dto';
+import { CreatePersonDto } from './dtos/create-person.dto';
 import { CreateStudentDto } from './dtos/create-student.dto';
 import { StudentQueryParams } from './types';
 
@@ -33,106 +35,191 @@ export class StudentsService {
     private readonly sectionRepository: Repository<Section>,
     @InjectRepository(PersonRelationship)
     private readonly personRelationshipRepository: Repository<PersonRelationship>,
+    private readonly dataSource: DataSource,
   ) {}
 
-  async create(createStudentDto: CreateStudentDto) {
-    let address: Address | undefined;
-    if (createStudentDto.person.address) {
-      const newAddress = this.addressRepository.create(
-        createStudentDto.person.address,
+  async create(createStudentDto: CreateStudentDto): Promise<Student> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const studentPerson = await this.resolveOrCreatePerson(
+        createStudentDto.personId,
+        createStudentDto.person,
+        queryRunner,
       );
-      address = await this.addressRepository.save(newAddress);
+
+      // Validate and get class and section
+      const { classEntity, section } = await this.validateAndGetClassAndSection(
+        createStudentDto.classId,
+        createStudentDto.sectionId,
+      );
+
+      // Create student entity
+      const student = queryRunner.manager.create(Student, {
+        person: studentPerson,
+        class: classEntity,
+        section: section,
+        rollNumber: createStudentDto.rollNumber,
+        emergencyContact: createStudentDto.emergencyContact,
+        active: createStudentDto.active ?? State.ACTIVE,
+      });
+      const savedStudent = await queryRunner.manager.save(Student, student);
+
+      // Create parent/guardian relationships
+      await this.createStudentRelationships(
+        createStudentDto.relations,
+        studentPerson,
+        savedStudent.id,
+        queryRunner,
+      );
+
+      // Create guardian relationship if provided
+      if (createStudentDto.guardianId || createStudentDto.guardian) {
+        await this.createGuardianRelationship(
+          createStudentDto.guardianId,
+          createStudentDto.guardian,
+          studentPerson,
+          savedStudent.id,
+          queryRunner,
+        );
+      }
+
+      await queryRunner.commitTransaction();
+      return savedStudent;
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  private async resolveOrCreatePerson(
+    personId: number | undefined,
+    personDto: CreatePersonDto | undefined,
+    queryRunner: QueryRunner,
+  ): Promise<Person> {
+    if (personId) {
+      const existingPerson = await this.personRepository.findOne({
+        where: { id: personId },
+        relations: { address: true },
+      });
+      if (!existingPerson) {
+        throw new UnprocessableEntityException(
+          `Person with ID ${personId} not found`,
+        );
+      }
+      return existingPerson;
     }
 
-    const person = this.personRepository.create({
-      ...createStudentDto.person,
-      address: address,
-      maritalStatus:
-        createStudentDto.person.maritalStatus ?? MaritalStatus.SINGLE,
-    });
-    const savedPerson = await this.personRepository.save(person);
+    return await this.createPersonWithAddress(personDto!, queryRunner);
+  }
 
+  private async createPersonWithAddress(
+    personDto: CreatePersonDto,
+    queryRunner: QueryRunner,
+  ): Promise<Person> {
+    let address: Address | undefined;
+
+    if (personDto.address) {
+      const newAddress = queryRunner.manager.create(Address, personDto.address);
+      address = await queryRunner.manager.save(Address, newAddress);
+    }
+
+    const person = queryRunner.manager.create(Person, {
+      ...personDto,
+      address: address,
+      maritalStatus: personDto.maritalStatus ?? MaritalStatus.SINGLE,
+    });
+
+    return await queryRunner.manager.save(Person, person);
+  }
+
+  private async validateAndGetClassAndSection(
+    classId: number,
+    sectionId: number,
+  ): Promise<{ classEntity: Class; section: Section }> {
     const classEntity = await this.classRepository.findOne({
-      where: { id: createStudentDto.classId },
+      where: { id: classId },
     });
     const section = await this.sectionRepository.findOne({
-      where: { id: createStudentDto.sectionId },
+      where: { id: sectionId },
     });
 
     if (!classEntity) {
-      throw new Error(`Class with ID ${createStudentDto.classId} not found`);
+      throw new UnprocessableEntityException(
+        `Class with ID ${classId} not found`,
+      );
     }
     if (!section) {
-      throw new Error(
-        `Section with ID ${createStudentDto.sectionId} not found`,
+      throw new UnprocessableEntityException(
+        `Section with ID ${sectionId} not found`,
       );
     }
 
-    const student = this.studentRepository.create({
-      person: savedPerson,
-      class: classEntity,
-      section: section,
-      rollNumber: createStudentDto.rollNumber,
-      house: createStudentDto.house,
-      emergencyContact: createStudentDto.emergencyContact,
-      active: createStudentDto.active ?? State.ACTIVE,
+    return { classEntity, section };
+  }
+
+  private async createStudentRelationships(
+    parentDtos: CreateParentDto[],
+    studentPerson: Person,
+    studentId: number,
+    queryRunner: QueryRunner,
+  ): Promise<void> {
+    for (const parentDto of parentDtos) {
+      await this.createSingleRelationship(
+        parentDto.personId,
+        parentDto.person,
+        parentDto.relationType,
+        studentPerson,
+        studentId,
+        queryRunner,
+      );
+    }
+  }
+
+  private async createGuardianRelationship(
+    guardianId: number | undefined,
+    guardianDto: CreatePersonDto | undefined,
+    studentPerson: Person,
+    studentId: number,
+    queryRunner: QueryRunner,
+  ): Promise<void> {
+    await this.createSingleRelationship(
+      guardianId,
+      guardianDto,
+      RelationType.GUARDIAN,
+      studentPerson,
+      studentId,
+      queryRunner,
+    );
+  }
+
+  private async createSingleRelationship(
+    personId: number | undefined,
+    personDto: CreatePersonDto | undefined,
+    relationType: RelationType,
+    targetPerson: Person,
+    studentId: number,
+    queryRunner: QueryRunner,
+  ): Promise<void> {
+    const relationPerson = await this.resolveOrCreatePerson(
+      personId,
+      personDto,
+      queryRunner,
+    );
+
+    const relationship = queryRunner.manager.create(PersonRelationship, {
+      sourcePerson: relationPerson,
+      targetPerson: targetPerson,
+      relationType: relationType,
+      context: RelationContext.STUDENT,
+      contextId: studentId,
     });
 
-    const savedStudent = await this.studentRepository.save(student);
-
-    // Create relations (parents/guardians) and their relationships
-    for (const parentDto of createStudentDto.relations) {
-      let parentAddress: Address | undefined;
-      if (parentDto.person.address) {
-        const newParentAddress = this.addressRepository.create(
-          parentDto.person.address,
-        );
-        parentAddress = await this.addressRepository.save(newParentAddress);
-      }
-
-      const parentPerson = this.personRepository.create({
-        ...parentDto.person,
-        address: parentAddress,
-      });
-      const savedParentPerson = await this.personRepository.save(parentPerson);
-
-      const relationship = this.personRelationshipRepository.create({
-        sourcePerson: savedParentPerson,
-        targetPerson: savedPerson,
-        relationType: parentDto.relationType,
-        context: RelationContext.STUDENT,
-        contextId: savedStudent.id,
-      });
-      await this.personRelationshipRepository.save(relationship);
-    }
-
-    if (createStudentDto.guardian) {
-      let guardianAddress: Address | undefined;
-      if (createStudentDto.guardian.address) {
-        const newGuardianAddress = this.addressRepository.create(
-          createStudentDto.guardian.address,
-        );
-        guardianAddress = await this.addressRepository.save(newGuardianAddress);
-      }
-
-      const guardianPerson = this.personRepository.create({
-        ...createStudentDto.guardian,
-        address: guardianAddress,
-      });
-      const savedGuardianPerson =
-        await this.personRepository.save(guardianPerson);
-
-      const guardianRelationship = this.personRelationshipRepository.create({
-        sourcePerson: savedGuardianPerson,
-        targetPerson: savedPerson,
-        relationType: RelationType.GUARDIAN,
-        context: RelationContext.STUDENT,
-        contextId: savedStudent.id,
-      });
-      await this.personRelationshipRepository.save(guardianRelationship);
-    }
-
-    return savedStudent;
+    await queryRunner.manager.save(PersonRelationship, relationship);
   }
 
   async findAll(query: StudentQueryParams) {
@@ -172,15 +259,20 @@ export class StudentsService {
             sourcePerson: {
               address: true,
             },
-            targetPerson: {
-              address: true,
-            },
           },
         });
 
+        // Transform relationships to rename sourcePerson to person
+        const transformedRelationships = relationships.map(
+          ({ sourcePerson, ...rest }) => ({
+            ...rest,
+            person: sourcePerson,
+          }),
+        );
+
         return {
           ...student,
-          relationships,
+          relationships: transformedRelationships,
         };
       }),
     );
@@ -231,9 +323,17 @@ export class StudentsService {
       },
     });
 
+    // Transform relationships to rename sourcePerson to person
+    const transformedRelationships = relationships.map(
+      ({ sourcePerson, ...rest }) => ({
+        ...rest,
+        person: sourcePerson,
+      }),
+    );
+
     return {
       ...student,
-      relationships,
+      relationships: transformedRelationships,
     };
   }
 }

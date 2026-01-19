@@ -1,4 +1,4 @@
-export { AdditionDetail } from './addition-detail.entity';
+export { AdditionalDetail } from './additional-detail.entity';
 export { Address } from './address.entity';
 export { Class } from './class.entity';
 export { PersonRelationship } from './person-relationship.entity';

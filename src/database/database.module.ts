@@ -23,6 +23,11 @@ import { TeacherSubscriber } from './triggers/teacher.subscriber';
         migrationsRun: configService.get('NODE_ENV') === 'development',
         logging: configService.get('NODE_ENV') === 'development',
         subscribers: [StudentSubscriber, TeacherSubscriber],
+        extra: {
+          ssl: {
+            rejectUnauthorized: false, // Use false if using self-signed certificates
+          },
+        },
       }),
     }),
   ],

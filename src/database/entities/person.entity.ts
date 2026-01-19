@@ -6,7 +6,7 @@ import {
   OneToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import { AdditionDetail } from './addition-detail.entity';
+import { AdditionalDetail } from './additional-detail.entity';
 import { Address } from './address.entity';
 
 @Entity()
@@ -44,6 +44,6 @@ export class Person {
   @Column({ type: 'enum', enum: MaritalStatus, default: MaritalStatus.SINGLE })
   maritalStatus: MaritalStatus;
 
-  @OneToOne(() => AdditionDetail)
-  additionDetail: AdditionDetail;
+  @OneToOne(() => AdditionalDetail)
+  additionDetail: AdditionalDetail;
 }

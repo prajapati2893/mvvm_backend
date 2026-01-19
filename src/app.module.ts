@@ -6,7 +6,6 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { DatabaseModule } from './database/database.module';
 import { ClassesController } from './modules/classes/classes.controller';
 import { ClassesModule } from './modules/classes/classes.module';
-import { SectionsController } from './modules/classes/sections.controller';
 import { NotificationController } from './modules/notifications/notification.controller';
 import { NotificationModule } from './modules/notifications/notification.module';
 import { StudentsController } from './modules/students/students.controller';
@@ -35,7 +34,6 @@ export class AppModule implements NestModule {
       .apply(LoggerMiddleware)
       .forRoutes(
         ClassesController,
-        SectionsController,
         StudentsController,
         TeachersController,
         SubjectsController,

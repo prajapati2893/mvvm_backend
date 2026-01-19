@@ -1,5 +1,3 @@
-import { Faker } from '@faker-js/faker';
-import { Factory } from 'nestjs-seeder';
 import { State } from 'src/commons/types/types';
 import {
   Column,
@@ -10,12 +8,14 @@ import {
   ManyToOne,
   OneToOne,
   PrimaryGeneratedColumn,
+  Unique,
   UpdateDateColumn,
 } from 'typeorm';
 import { Class } from './class.entity';
 import { Person } from './person.entity';
 import { Section } from './section.entity';
 
+@Unique(['rollNumber', 'class', 'section'])
 @Entity()
 export class Student {
   @PrimaryGeneratedColumn()
@@ -25,14 +25,6 @@ export class Student {
   @JoinColumn()
   person: Person;
 
-  @Factory(
-    (faker: Faker) =>
-      'ADM' +
-      faker.string.alphanumeric({
-        casing: 'upper',
-        length: { min: 5, max: 5 },
-      }),
-  )
   @Column({ length: 10, unique: true, nullable: true })
   admissionNo: string;
 
@@ -42,11 +34,8 @@ export class Student {
   @ManyToOne(() => Section)
   section: Section;
 
-  @Column({ unique: true })
+  @Column()
   rollNumber: number;
-
-  @Column({ nullable: true })
-  house: string;
 
   @Column({ nullable: true, length: 10 })
   emergencyContact: string;
