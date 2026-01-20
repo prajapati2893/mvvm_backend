@@ -8,6 +8,8 @@ import { ClassesController } from './modules/classes/classes.controller';
 import { ClassesModule } from './modules/classes/classes.module';
 import { NotificationController } from './modules/notifications/notification.controller';
 import { NotificationModule } from './modules/notifications/notification.module';
+import { PersonsController } from './modules/persons/persons.controller';
+import { PersonsModule } from './modules/persons/persons.module';
 import { StudentsController } from './modules/students/students.controller';
 import { StudentsModule } from './modules/students/students.module';
 import { SubjectsController } from './modules/subjects/subjects.controller';
@@ -24,6 +26,7 @@ import { TeachersModule } from './modules/teachers/teachers.module';
     SubjectsModule,
     TeachersModule,
     NotificationModule,
+    PersonsModule,
   ],
   controllers: [AppController],
   providers: [AppService, Logger],
@@ -38,6 +41,7 @@ export class AppModule implements NestModule {
         TeachersController,
         SubjectsController,
         NotificationController,
+        PersonsController,
       );
   }
 }

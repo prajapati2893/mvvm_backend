@@ -15,4 +15,33 @@ export const CLASS_CODES = [
   '12',
 ] as const;
 
+export const SECTION_CODES = [
+  'A',
+  'B',
+  'C',
+  'D',
+  'E',
+  'F',
+  'G',
+  'H',
+  'I',
+  'J',
+  'K',
+  'L',
+  'M',
+  'N',
+  'O',
+  'P',
+  'Q',
+  'R',
+  'S',
+  'T',
+  'U',
+  'V',
+  'W',
+  'X',
+  'Y',
+  'Z',
+] as const;
 export type ClassCode = (typeof CLASS_CODES)[number];
+export type SectionCode = (typeof SECTION_CODES)[number];

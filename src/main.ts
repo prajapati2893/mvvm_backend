@@ -24,12 +24,18 @@ async function bootstrap() {
     .setVersion('1.0')
     .build();
   const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api', app, document);
+  SwaggerModule.setup('api', app, document, {
+    swaggerOptions: {
+      defaultModelsExpandDepth: -1, // Hide schemas section
+    },
+  });
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
 
   logger.log(`Application is running on: http://localhost:${port}/api`);
-  logger.log(`Swagger documentation available at: http://localhost:${port}/api`);
+  logger.log(
+    `Swagger documentation available at: http://localhost:${port}/api`,
+  );
 }
 void bootstrap();

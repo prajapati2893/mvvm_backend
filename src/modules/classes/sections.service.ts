@@ -8,7 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Class, Section, Student } from 'src/database/entities';
 import { Repository } from 'typeorm';
 import { CreateSectionDto } from './dtos/create-section.dto';
-import { ClassCode } from './types';
+import { ClassCode, SectionCode } from './types';
 
 @Injectable()
 export class SectionsService {
@@ -70,7 +70,7 @@ export class SectionsService {
 
   async removeByClassAndCode(
     classCode: ClassCode,
-    sectionCode: string,
+    sectionCode: SectionCode,
   ): Promise<Section> {
     const section = await this.sectionRepository.findOne({
       where: {

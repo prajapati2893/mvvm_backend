@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, Length } from 'class-validator';
+import { IsEnum, IsNotEmpty } from 'class-validator';
+import { SECTION_CODES, type SectionCode } from '../types';
 
 export class CreateSectionDto {
   @ApiProperty({
@@ -9,7 +10,6 @@ export class CreateSectionDto {
     maxLength: 1,
   })
   @IsNotEmpty()
-  @IsString()
-  @Length(1, 1)
-  code: string;
+  @IsEnum(SECTION_CODES, { message: 'code must be a valid section code' })
+  code: SectionCode;
 }

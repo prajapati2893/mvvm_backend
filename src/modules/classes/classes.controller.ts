@@ -15,7 +15,7 @@ import { CreateClassDto } from './dtos/create-class.dto';
 import { CreateSectionDto } from './dtos/create-section.dto';
 import { UpdateClassDto } from './dtos/update-class.dto';
 import { SectionsService } from './sections.service';
-import type { ClassCode } from './types';
+import type { ClassCode, SectionCode } from './types';
 
 @ApiTags('Classes')
 @Controller('classes')
@@ -107,7 +107,7 @@ export class ClassesController {
   })
   async removeSection(
     @Param('classCode', ParseIntPipe) classCode: ClassCode,
-    @Param('sectionCode') sectionCode: string,
+    @Param('sectionCode') sectionCode: SectionCode,
   ): Promise<Section> {
     return await this.sectionsService.removeByClassAndCode(
       classCode,

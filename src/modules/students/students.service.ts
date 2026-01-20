@@ -1,4 +1,8 @@
-import { Injectable, UnprocessableEntityException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
   MaritalStatus,
@@ -14,11 +18,13 @@ import {
   Section,
   Student,
 } from 'src/database/entities';
-import { DataSource, QueryRunner, Repository } from 'typeorm';
+import { DataSource, Like, QueryRunner, Repository } from 'typeorm';
+import { ClassCode, SectionCode } from '../classes/types';
 import { CreateParentDto } from './dtos/create-parent.dto';
 import { CreatePersonDto } from './dtos/create-person.dto';
 import { CreateStudentDto } from './dtos/create-student.dto';
-import { StudentQueryParams } from './types';
+import { StudentQueryParams } from './dtos/student-query-params.dto';
+import { UpdateStudentDto } from './dtos/update-student.dto';
 
 @Injectable()
 export class StudentsService {
@@ -52,8 +58,8 @@ export class StudentsService {
 
       // Validate and get class and section
       const { classEntity, section } = await this.validateAndGetClassAndSection(
-        createStudentDto.classId,
-        createStudentDto.sectionId,
+        createStudentDto.classCode,
+        createStudentDto.sectionCode,
       );
 
       // Create student entity
@@ -138,24 +144,24 @@ export class StudentsService {
   }
 
   private async validateAndGetClassAndSection(
-    classId: number,
-    sectionId: number,
+    classCode: ClassCode,
+    sectionCode: SectionCode,
   ): Promise<{ classEntity: Class; section: Section }> {
     const classEntity = await this.classRepository.findOne({
-      where: { id: classId },
+      where: { code: classCode },
     });
     const section = await this.sectionRepository.findOne({
-      where: { id: sectionId },
+      where: { code: sectionCode },
     });
 
     if (!classEntity) {
       throw new UnprocessableEntityException(
-        `Class with ID ${classId} not found`,
+        `Class with ID ${classCode} not found`,
       );
     }
     if (!section) {
       throw new UnprocessableEntityException(
-        `Section with ID ${sectionId} not found`,
+        `Section with ID ${sectionCode} not found`,
       );
     }
 
@@ -222,15 +228,51 @@ export class StudentsService {
     await queryRunner.manager.save(PersonRelationship, relationship);
   }
 
-  async findAll(query: StudentQueryParams) {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 10;
+  async findAll(query?: StudentQueryParams) {
+    const page = query?.page ?? 1;
+    const limit = query?.limit ?? 10;
     const offset = (page - 1) * limit;
 
-    const totalItems = await this.studentRepository.count();
+    const where: Record<string, any> = {};
+
+    if (query?.rollNumber !== undefined) {
+      where.rollNumber = query.rollNumber;
+    }
+    if (query?.classCode) {
+      where.class = { code: query.classCode };
+    }
+    if (query?.sectionCode) {
+      where.section = { code: query.sectionCode };
+    }
+    if (query?.active !== undefined) {
+      where.active = query.active;
+    }
+
+    // Person-related filters
+    const personWhere: Record<string, any> = {};
+    if (query?.firstName) {
+      personWhere.firstName = Like(`%${query.firstName}%`);
+    }
+    if (query?.lastName) {
+      personWhere.lastName = Like(`%${query.lastName}%`);
+    }
+    if (query?.phoneNumber) {
+      personWhere.phoneNumber = Like(`%${query.phoneNumber}%`);
+    }
+    if (query?.email) {
+      personWhere.email = Like(`%${query.email}%`);
+    }
+
+    if (Object.keys(personWhere).length > 0) {
+      where.person = personWhere;
+    }
+
+    const totalItems = await this.studentRepository.count({
+      where: Object.keys(where).length > 0 ? where : undefined,
+    });
 
     const students = await this.studentRepository.find({
-      ...query,
+      where: Object.keys(where).length > 0 ? where : undefined,
       skip: offset,
       take: limit,
       relations: {
@@ -335,5 +377,120 @@ export class StudentsService {
       ...student,
       relationships: transformedRelationships,
     };
+  }
+
+  async update(id: number, updateStudentDto: UpdateStudentDto) {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const student = await this.studentRepository.findOne({
+        where: { id },
+        relations: {
+          person: true,
+          class: true,
+          section: true,
+        },
+      });
+
+      if (!student) {
+        throw new NotFoundException(`Student with ID ${id} not found`);
+      }
+
+      if (updateStudentDto.classCode || updateStudentDto.sectionCode) {
+        const { classEntity, section } =
+          await this.validateAndGetClassAndSection(
+            updateStudentDto.classCode ?? student.class.code,
+            updateStudentDto.sectionCode ?? student.section.code,
+          );
+        student.class = classEntity;
+        student.section = section;
+      }
+
+      if (updateStudentDto.rollNumber !== undefined) {
+        student.rollNumber = updateStudentDto.rollNumber;
+      }
+      if (updateStudentDto.emergencyContact !== undefined) {
+        student.emergencyContact = updateStudentDto.emergencyContact;
+      }
+      if (updateStudentDto.active !== undefined) {
+        student.active = updateStudentDto.active;
+      }
+
+      const updatedStudent = await queryRunner.manager.save(Student, student);
+
+      if (updateStudentDto.relations && updateStudentDto.relations.length > 0) {
+        await this.deleteExistingRelationships(student.person.id, queryRunner);
+
+        for (const relationDto of updateStudentDto.relations) {
+          const relationPerson = await this.personRepository.findOne({
+            where: { id: relationDto.personId },
+          });
+
+          if (!relationPerson) {
+            throw new UnprocessableEntityException(
+              `Person with ID ${relationDto.personId} not found`,
+            );
+          }
+
+          const relationship = queryRunner.manager.create(PersonRelationship, {
+            sourcePerson: relationPerson,
+            targetPerson: student.person,
+            relationType: relationDto.relationType,
+            context: RelationContext.STUDENT,
+            contextId: student.id,
+          });
+
+          await queryRunner.manager.save(PersonRelationship, relationship);
+        }
+      }
+
+      await queryRunner.commitTransaction();
+      return this.findOne(updatedStudent.id);
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  private async deleteExistingRelationships(
+    personId: number,
+    queryRunner: QueryRunner,
+  ): Promise<void> {
+    await queryRunner.manager.delete(PersonRelationship, {
+      targetPerson: { id: personId },
+      context: RelationContext.STUDENT,
+      relationType: RelationType.FATHER,
+    });
+    await queryRunner.manager.delete(PersonRelationship, {
+      targetPerson: { id: personId },
+      context: RelationContext.STUDENT,
+      relationType: RelationType.MOTHER,
+    });
+    await queryRunner.manager.delete(PersonRelationship, {
+      targetPerson: { id: personId },
+      context: RelationContext.STUDENT,
+      relationType: RelationType.GUARDIAN,
+    });
+  }
+
+  async remove(id: number): Promise<Student> {
+    const student = await this.studentRepository.findOne({
+      where: { id },
+      relations: {
+        person: true,
+        class: true,
+        section: true,
+      },
+    });
+
+    if (!student) {
+      throw new NotFoundException(`Student with ID ${id} not found`);
+    }
+    student.active = State.INACTIVE;
+    return await this.studentRepository.save(student);
   }
 }

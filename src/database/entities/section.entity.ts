@@ -1,3 +1,4 @@
+import type { SectionCode } from 'src/modules/classes/types';
 import {
   Column,
   Entity,
@@ -13,8 +14,8 @@ export class Section {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ length: 1 })
-  code: string;
+  @Column()
+  code: SectionCode;
 
   @ManyToOne(() => Class, (cls) => cls.sections)
   class: Class;
